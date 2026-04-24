@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -104,8 +105,23 @@ func handlerChirpsValidate(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 400, "Chirp is too long")
 		return
 	}
-	type vals struct {
-		Valid bool `json:"valid"`
+	// type vals struct {
+	// 	Valid bool `json:"valid"`
+	// }
+	// respondWithJSON(w, 200, vals{Valid: true})
+
+	seg := strings.Split(params.Body, " ")
+
+	for i, b := range seg {
+		if strings.ToLower(b) == "kerfuffle" || strings.ToLower(b) == "sharbert" || strings.ToLower(b) == "fornax" {
+			seg[i] = "****"
+		}
 	}
-	respondWithJSON(w, 200, vals{Valid: true})
+	seg2 := strings.Join(seg, " ")
+
+	type vals_ struct {
+		Cleaned_body string `json:"cleaned_body"`
+	}
+	respondWithJSON(w, 200, vals_{Cleaned_body: seg2})
+
 }
