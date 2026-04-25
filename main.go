@@ -10,6 +10,9 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"time"
+
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"github.com/kris200036/go_server/internal/database"
 	_ "github.com/lib/pq"
@@ -19,6 +22,8 @@ func main() {
 	godotenv.Load()
 
 	dbURL := os.Getenv("DB_URL")
+	log.Printf("db_url", dbURL)
+	platform := os.Getenv("PLATFORM")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatal(err)
@@ -28,7 +33,9 @@ func main() {
 	apiCfg := apiConfig{
 		fileserverHits: atomic.Int32{},
 		db:             dbQueries,
+		platform:       platform,
 	}
+
 	mux := http.NewServeMux()
 	fileserver := http.FileServer(http.Dir("."))
 	// mux.Handle("/app/", http.StripPrefix("/app", fileserver))
@@ -36,6 +43,7 @@ func main() {
 	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
 	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
 	mux.HandleFunc("POST /api/validate_chirp", handlerChirpsValidate)
+	mux.HandleFunc("POST /api/users", apiCfg.handlerUsers)
 
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -54,6 +62,7 @@ func main() {
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
+	platform       string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -64,7 +73,23 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	})
 }
 func (cfg *apiConfig) handlerReset(w http.ResponseWriter, r *http.Request) {
+
+	if cfg.platform != "dev" {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	err := cfg.db.DeleteAllUsers(r.Context())
+	if err != nil {
+		log.Printf("Its bad: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+
 	cfg.fileserverHits.Store(0)
+
+	w.WriteHeader(http.StatusOK)
+
 }
 
 func (cfg *apiConfig) handlerMetrics(w http.ResponseWriter, r *http.Request) {
@@ -142,4 +167,39 @@ func handlerChirpsValidate(w http.ResponseWriter, r *http.Request) {
 	}
 	respondWithJSON(w, 200, vals_{Cleaned_body: seg2})
 
+}
+
+func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
+
+	type param struct {
+		Email string `json:"email"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	params := param{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Something went wrong___: %s", err)
+		w.WriteHeader(500)
+		return
+	}
+	user, err := cfg.db.CreateUser(r.Context(), params.Email)
+	if err != nil {
+		log.Printf("Something went wrong: %s", err)
+		w.WriteHeader(500)
+		return
+
+	}
+
+	respondWithJSON(w, http.StatusCreated, User{ID: user.ID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email:     user.Email})
+
+}
+
+type User struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
 }
