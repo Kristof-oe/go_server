@@ -22,7 +22,7 @@ func main() {
 	godotenv.Load()
 
 	dbURL := os.Getenv("DB_URL")
-	log.Printf("db_url", dbURL)
+	log.Printf("db_url %s", dbURL)
 	platform := os.Getenv("PLATFORM")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -42,8 +42,9 @@ func main() {
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", fileserver)))
 	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
 	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
-	mux.HandleFunc("POST /api/validate_chirp", handlerChirpsValidate)
+	// mux.HandleFunc("POST /api/validate_chirp", handlerChirpsValidate)
 	mux.HandleFunc("POST /api/users", apiCfg.handlerUsers)
+	mux.HandleFunc("POST /api/chirps", apiCfg.handleCreate)
 
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -202,4 +203,48 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+}
+
+func (cfg *apiConfig) handleCreate(w http.ResponseWriter, r *http.Request) {
+	type param struct {
+		Body   string    `json:"body"`
+		UserID uuid.UUID `json:"user_id"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	params := param{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		respondWithError(w, 500, "Something went wrong")
+		return
+	}
+	if len(params.Body) > 140 {
+		respondWithError(w, 400, "Chirp is too long")
+		return
+	}
+
+	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
+		Body:   params.Body,
+		UserID: params.UserID,
+	})
+	if err != nil {
+		log.Printf("Something went wrong: %s", err)
+		w.WriteHeader(500)
+		return
+
+	}
+
+	respondWithJSON(w, http.StatusCreated, Chirp{ID: chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body:      chirp.Body,
+		UserID:    chirp.UserID})
+
+}
+
+type Chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
 }
