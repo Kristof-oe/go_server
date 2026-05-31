@@ -45,6 +45,7 @@ func main() {
 	// mux.HandleFunc("POST /api/validate_chirp", handlerChirpsValidate)
 	mux.HandleFunc("POST /api/users", apiCfg.handlerUsers)
 	mux.HandleFunc("POST /api/chirps", apiCfg.handleCreate)
+	mux.HandleFunc("GET /api/chirps", apiCfg.handleGetAll)
 
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -222,7 +223,7 @@ func (cfg *apiConfig) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
+	chirp, err := cfg.db.CreateChirps(r.Context(), database.CreateChirpsParams{
 		Body:   params.Body,
 		UserID: params.UserID,
 	})
@@ -247,4 +248,45 @@ type Chirp struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	Body      string    `json:"body"`
 	UserID    uuid.UUID `json:"user_id"`
+}
+
+func (cfg *apiConfig) handleGetAll(w http.ResponseWriter, r *http.Request) {
+
+	// type param struct {
+	// 	Body   string    `json:"body"`
+	// 	UserID uuid.UUID `json:"user_id"`
+	// }
+	// decoder := json.NewDecoder(r.Body)
+	// params := param{}
+	// err := decoder.Decode(&params)
+	// if err != nil {
+	// 	respondWithError(w, 500, "Something went wrong")
+	// 	return
+	// }
+	// if len(params.Body) > 140 {
+	// 	respondWithError(w, 400, "Chirp is too long")
+	// 	return
+	// }
+
+	chirps_db, err := cfg.db.GetChirps(r.Context())
+	if err != nil {
+		log.Printf("Something went wrong: %s", err)
+		w.WriteHeader(500)
+		return
+
+	}
+
+	chirps := []Chirp{}
+	for _, chirp := range chirps_db {
+
+		chirps = append(chirps, Chirp{
+			ID:        chirp.ID,
+			CreatedAt: chirp.CreatedAt,
+			UpdatedAt: chirp.UpdatedAt,
+			Body:      chirp.Body,
+			UserID:    chirp.UserID})
+	}
+
+	respondWithJSON(w, http.StatusOK, chirps)
+
 }
