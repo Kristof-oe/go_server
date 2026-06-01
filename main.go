@@ -46,6 +46,7 @@ func main() {
 	mux.HandleFunc("POST /api/users", apiCfg.handlerUsers)
 	mux.HandleFunc("POST /api/chirps", apiCfg.handleCreate)
 	mux.HandleFunc("GET /api/chirps", apiCfg.handleGetAll)
+	mux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.handleGetByID)
 
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -288,5 +289,32 @@ func (cfg *apiConfig) handleGetAll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, chirps)
+
+}
+
+func (cfg *apiConfig) handleGetByID(w http.ResponseWriter, r *http.Request) {
+
+	data := r.PathValue("chirpID")
+
+	data_u, err := uuid.Parse(data)
+	if err != nil {
+
+		w.WriteHeader(404)
+		return
+
+	}
+	raw, err := cfg.db.GetByID(r.Context(), data_u)
+	if err != nil {
+
+		w.WriteHeader(404)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, Chirp{
+		ID:        raw.ID,
+		CreatedAt: raw.CreatedAt,
+		UpdatedAt: raw.UpdatedAt,
+		Body:      raw.Body,
+		UserID:    raw.UserID})
 
 }
