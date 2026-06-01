@@ -4,6 +4,11 @@ import (
 	"log"
 	"time"
 
+	"net/http"
+
+	"errors"
+	"strings"
+
 	"github.com/alexedwards/argon2id"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -50,4 +55,19 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	}
 	return uuid.Parse(claims.Subject)
 
+}
+
+func GetBearerToken(headers http.Header) (string, error) {
+
+	authHead := headers.Get("Authorization")
+	if authHead == "" {
+		return "", errors.New("wrong")
+	}
+
+	parts := strings.Split(authHead, " ")
+
+	if len(parts) != 2 || parts[0] != "Bearer" {
+		return "", errors.New("wrong")
+	}
+	return parts[1], nil
 }

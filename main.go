@@ -25,6 +25,7 @@ func main() {
 	dbURL := os.Getenv("DB_URL")
 	log.Printf("db_url %s", dbURL)
 	platform := os.Getenv("PLATFORM")
+	secret := os.Getenv("SECRET")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatal(err)
@@ -35,6 +36,7 @@ func main() {
 		fileserverHits: atomic.Int32{},
 		db:             dbQueries,
 		platform:       platform,
+		jwtSecret:      secret,
 	}
 
 	mux := http.NewServeMux()
@@ -68,6 +70,7 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
 	platform       string
+	jwtSecret      string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -209,14 +212,6 @@ func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 
 }
 
-type User struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
-	Password  string    `json:"password"`
-}
-
 func (cfg *apiConfig) handleCreate(w http.ResponseWriter, r *http.Request) {
 	type param struct {
 		Body   string    `json:"body"`
@@ -234,9 +229,20 @@ func (cfg *apiConfig) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "wrong")
+		return
+	}
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "wrong")
+		return
+	}
+
 	chirp, err := cfg.db.CreateChirps(r.Context(), database.CreateChirpsParams{
 		Body:   params.Body,
-		UserID: params.UserID,
+		UserID: userID,
 	})
 	if err != nil {
 		log.Printf("Something went wrong: %s", err)
@@ -251,14 +257,6 @@ func (cfg *apiConfig) handleCreate(w http.ResponseWriter, r *http.Request) {
 		Body:      chirp.Body,
 		UserID:    chirp.UserID})
 
-}
-
-type Chirp struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Body      string    `json:"body"`
-	UserID    uuid.UUID `json:"user_id"`
 }
 
 func (cfg *apiConfig) handleGetAll(w http.ResponseWriter, r *http.Request) {
@@ -332,8 +330,9 @@ func (cfg *apiConfig) handleGetByID(w http.ResponseWriter, r *http.Request) {
 func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	type param struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email     string `json:"email"`
+		Password  string `json:"password"`
+		ExpiresIn int    `json:"expires_in_seconds"`
 	}
 	decoder := json.NewDecoder(r.Body)
 	params := param{}
@@ -342,6 +341,11 @@ func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Something went wrong___: %s", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid")
 		return
+	}
+	expirationTime := time.Hour
+
+	if params.ExpiresIn > 0 && params.ExpiresIn < 3600 {
+		expirationTime = time.Duration(params.ExpiresIn) * time.Second
 	}
 
 	user, err := cfg.db.GetByLogin(r.Context(), params.Email)
@@ -361,9 +365,33 @@ func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	seg2, err := auth.MakeJWT(user.ID, cfg.jwtSecret, expirationTime)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create token")
+		return
+	}
+
 	respondWithJSON(w, http.StatusOK, User{
 		ID:        user.ID,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
-		Email:     user.Email})
+		Email:     user.Email,
+		Token:     seg2})
+}
+
+type User struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
+	Password  string    `json:"password"`
+	Token     string    `json:"token"`
+}
+
+type Chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
 }
