@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
+	"github.com/kris200036/go_server/internal/auth"
 	"github.com/kris200036/go_server/internal/database"
 	_ "github.com/lib/pq"
 )
@@ -47,6 +48,7 @@ func main() {
 	mux.HandleFunc("POST /api/chirps", apiCfg.handleCreate)
 	mux.HandleFunc("GET /api/chirps", apiCfg.handleGetAll)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.handleGetByID)
+	mux.HandleFunc("POST /api/login", apiCfg.handleLogin)
 
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -175,7 +177,8 @@ func handlerChirpsValidate(w http.ResponseWriter, r *http.Request) {
 func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 
 	type param struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 	decoder := json.NewDecoder(r.Body)
 	params := param{}
@@ -185,7 +188,12 @@ func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		return
 	}
-	user, err := cfg.db.CreateUser(r.Context(), params.Email)
+	hashed_Pwd, err := auth.HashPassword(params.Password)
+	db_Param := database.CreateUserParams{
+		Email:          params.Email,
+		HashedPassword: hashed_Pwd,
+	}
+	user, err := cfg.db.CreateUser(r.Context(), db_Param)
 	if err != nil {
 		log.Printf("Something went wrong: %s", err)
 		w.WriteHeader(500)
@@ -193,7 +201,8 @@ func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	respondWithJSON(w, http.StatusCreated, User{ID: user.ID,
+	respondWithJSON(w, http.StatusCreated, User{
+		ID:        user.ID,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email:     user.Email})
@@ -205,6 +214,7 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+	Password  string    `json:"password"`
 }
 
 func (cfg *apiConfig) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -317,4 +327,43 @@ func (cfg *apiConfig) handleGetByID(w http.ResponseWriter, r *http.Request) {
 		Body:      raw.Body,
 		UserID:    raw.UserID})
 
+}
+
+func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
+
+	type param struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	params := param{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Something went wrong___: %s", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid")
+		return
+	}
+
+	user, err := cfg.db.GetByLogin(r.Context(), params.Email)
+	if err != nil {
+		log.Printf("Something went wrong: %s", err)
+		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password")
+		return
+
+	}
+	seg, err := auth.CheckPasswordHash(params.Password, user.HashedPassword)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password")
+		return
+	}
+	if !seg {
+		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, User{
+		ID:        user.ID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email:     user.Email})
 }
