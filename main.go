@@ -54,6 +54,7 @@ func main() {
 	mux.HandleFunc("POST /api/refresh", apiCfg.handleRefresh)
 	mux.HandleFunc("POST /api/revoke", apiCfg.handleRevoke)
 	mux.HandleFunc("PUT /api/users", apiCfg.handleUpdate)
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", apiCfg.HandleDelete)
 
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -492,6 +493,49 @@ func (cfg *apiConfig) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email:     user.Email})
+}
+
+func (cfg *apiConfig) HandleDelete(w http.ResponseWriter, r *http.Request) {
+
+	data := r.PathValue("chirpID")
+
+	data_u, err := uuid.Parse(data)
+	if err != nil {
+
+		w.WriteHeader(404)
+		return
+
+	}
+	chirp, err := cfg.db.GetByID(r.Context(), data_u)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "its not a real chirp")
+		return
+	}
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "no token")
+		return
+	}
+
+	seg, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "no id")
+		return
+	}
+
+	if chirp.UserID != seg {
+		respondWithError(w, http.StatusForbidden, "error forbidden")
+		return
+	}
+	err = cfg.db.DeleteChripByID(r.Context(), data_u)
+	if err != nil {
+
+		w.WriteHeader(404)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type User struct {
