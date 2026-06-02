@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"encoding/hex"
 	"log"
 	"time"
 
@@ -8,6 +9,8 @@ import (
 
 	"errors"
 	"strings"
+
+	"crypto/rand"
 
 	"github.com/alexedwards/argon2id"
 	"github.com/golang-jwt/jwt/v5"
@@ -70,4 +73,11 @@ func GetBearerToken(headers http.Header) (string, error) {
 		return "", errors.New("wrong")
 	}
 	return parts[1], nil
+}
+
+func MakeRefreshToken() string {
+
+	key := make([]byte, 32)
+	rand.Read(key)
+	return hex.EncodeToString(key)
 }
