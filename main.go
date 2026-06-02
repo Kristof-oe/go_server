@@ -55,6 +55,7 @@ func main() {
 	mux.HandleFunc("POST /api/revoke", apiCfg.handleRevoke)
 	mux.HandleFunc("PUT /api/users", apiCfg.handleUpdate)
 	mux.HandleFunc("DELETE /api/chirps/{chirpID}", apiCfg.HandleDelete)
+	mux.HandleFunc("POST /api/polka/webhooks", apiCfg.handleEvent)
 
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -209,10 +210,11 @@ func (cfg *apiConfig) handlerUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusCreated, User{
-		ID:        user.ID,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-		Email:     user.Email})
+		ID:          user.ID,
+		CreatedAt:   user.CreatedAt,
+		UpdatedAt:   user.UpdatedAt,
+		Email:       user.Email,
+		IsChirpyRed: user.IsChirpyRed})
 
 }
 
@@ -394,7 +396,8 @@ func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:     user.UpdatedAt,
 		Email:         user.Email,
 		Token:         accees_token,
-		Refresh_token: refreshed_token})
+		Refresh_token: refreshed_token,
+		IsChirpyRed:   user.IsChirpyRed})
 }
 
 func (cfg *apiConfig) handleRefresh(w http.ResponseWriter, r *http.Request) {
@@ -489,10 +492,11 @@ func (cfg *apiConfig) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, User{
-		ID:        user.ID,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-		Email:     user.Email})
+		ID:          user.ID,
+		CreatedAt:   user.CreatedAt,
+		UpdatedAt:   user.UpdatedAt,
+		Email:       user.Email,
+		IsChirpyRed: user.IsChirpyRed})
 }
 
 func (cfg *apiConfig) HandleDelete(w http.ResponseWriter, r *http.Request) {
@@ -538,6 +542,37 @@ func (cfg *apiConfig) HandleDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (cfg *apiConfig) handleEvent(w http.ResponseWriter, r *http.Request) {
+
+	type param struct {
+		Event string `json:"event"`
+		Data  struct {
+			Userid uuid.UUID `json:"user_id"`
+		}
+	}
+	decoder := json.NewDecoder(r.Body)
+	params := param{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Something went wrong___: %s", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid")
+		return
+	}
+
+	if params.Event != "user.upgraded" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	_, err = cfg.db.UpdateChripy(r.Context(), params.Data.Userid)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "its not a real user")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+
+}
+
 type User struct {
 	ID            uuid.UUID `json:"id"`
 	CreatedAt     time.Time `json:"created_at"`
@@ -546,6 +581,7 @@ type User struct {
 	Password      string    `json:"password"`
 	Token         string    `json:"token"`
 	Refresh_token string    `json:"refresh_token"`
+	IsChirpyRed   bool      `json:"is_chirpy_red"`
 }
 
 type Chirp struct {
