@@ -53,6 +53,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", apiCfg.handleLogin)
 	mux.HandleFunc("POST /api/refresh", apiCfg.handleRefresh)
 	mux.HandleFunc("POST /api/revoke", apiCfg.handleRevoke)
+	mux.HandleFunc("PUT /api/users", apiCfg.handleUpdate)
 
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -442,6 +443,55 @@ func (cfg *apiConfig) handleRevoke(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 
+}
+
+func (cfg *apiConfig) handleUpdate(w http.ResponseWriter, r *http.Request) {
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "no token")
+		return
+	}
+	type param struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	params := param{}
+	err = decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Something went wrong___: %s", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid")
+		return
+	}
+	seg, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "no id")
+		return
+	}
+	hashed, err := auth.HashPassword(params.Password)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "this is it")
+		return
+	}
+
+	user, err := cfg.db.UpdateUser(r.Context(), database.UpdateUserParams{
+		Email:          params.Email,
+		HashedPassword: hashed,
+		ID:             seg})
+
+	if err != nil {
+		log.Printf("Something went wrong: %s", err)
+		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password")
+		return
+
+	}
+
+	respondWithJSON(w, http.StatusOK, User{
+		ID:        user.ID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email:     user.Email})
 }
 
 type User struct {
