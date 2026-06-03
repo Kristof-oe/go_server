@@ -26,6 +26,7 @@ func main() {
 	log.Printf("db_url %s", dbURL)
 	platform := os.Getenv("PLATFORM")
 	secret := os.Getenv("SECRET")
+	apikey := os.Getenv("POLKA_KEY")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatal(err)
@@ -34,6 +35,7 @@ func main() {
 
 	apiCfg := apiConfig{
 		fileserverHits: atomic.Int32{},
+		apiKey:         apikey,
 		db:             dbQueries,
 		platform:       platform,
 		jwtSecret:      secret,
@@ -76,6 +78,7 @@ type apiConfig struct {
 	db             *database.Queries
 	platform       string
 	jwtSecret      string
+	apiKey         string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -556,6 +559,15 @@ func (cfg *apiConfig) handleEvent(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("Something went wrong___: %s", err)
 		respondWithError(w, http.StatusBadRequest, "Invalid")
+		return
+	}
+	r_header_authorization, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "not good")
+		return
+	}
+	if cfg.apiKey != r_header_authorization {
+		respondWithError(w, http.StatusUnauthorized, "not matchy")
 		return
 	}
 
