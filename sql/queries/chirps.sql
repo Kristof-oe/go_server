@@ -17,3 +17,4 @@ WHERE ID = $1;
 SELECT *
 FROM chirps
 WHERE user_id = $1;
+

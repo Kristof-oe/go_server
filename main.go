@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -271,7 +272,8 @@ func (cfg *apiConfig) handleCreate(w http.ResponseWriter, r *http.Request) {
 func (cfg *apiConfig) handleGetAll(w http.ResponseWriter, r *http.Request) {
 
 	s := r.URL.Query().Get("author_id")
-
+	sort_u := r.URL.Query().Get("sort")
+	chirps := []Chirp{}
 	s_u, err := uuid.Parse(s)
 	if err != nil {
 		chirps_db, err := cfg.db.GetChirps(r.Context())
@@ -282,7 +284,6 @@ func (cfg *apiConfig) handleGetAll(w http.ResponseWriter, r *http.Request) {
 
 		}
 
-		chirps := []Chirp{}
 		for _, chirp := range chirps_db {
 
 			chirps = append(chirps, Chirp{
@@ -293,19 +294,28 @@ func (cfg *apiConfig) handleGetAll(w http.ResponseWriter, r *http.Request) {
 				UserID:    chirp.UserID})
 		}
 
-		respondWithJSON(w, http.StatusOK, chirps)
+	} else {
+		author_by, err := cfg.db.GetByID2(r.Context(), s_u)
+		if err != nil {
+			respondWithError(w, 404, "not found")
+			return
+		}
+		for _, chirp := range author_by {
+
+			chirps = append(chirps, Chirp{
+				ID:        chirp.ID,
+				CreatedAt: chirp.CreatedAt,
+				UpdatedAt: chirp.UpdatedAt,
+				Body:      chirp.Body,
+				UserID:    chirp.UserID})
+		}
 	}
-	author_by, err := cfg.db.GetByID2(r.Context(), s_u)
 
-	chirps := []Chirp{}
-	for _, chirp := range author_by {
+	if sort_u == "asc" || sort_u == "" {
+		sort.Slice(chirps, func(i, j int) bool { return chirps[i].CreatedAt.Before(chirps[j].CreatedAt) })
 
-		chirps = append(chirps, Chirp{
-			ID:        chirp.ID,
-			CreatedAt: chirp.CreatedAt,
-			UpdatedAt: chirp.UpdatedAt,
-			Body:      chirp.Body,
-			UserID:    chirp.UserID})
+	} else {
+		sort.Slice(chirps, func(i, j int) bool { return chirps[i].CreatedAt.After(chirps[j].CreatedAt) })
 	}
 
 	respondWithJSON(w, http.StatusOK, chirps)
