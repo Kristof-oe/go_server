@@ -12,3 +12,8 @@ ORDER BY created_at ASC;
 SELECT *
 FROM chirps
 WHERE ID = $1;
+
+-- name: GetByID2 :many
+SELECT *
+FROM chirps
+WHERE user_id = $1;

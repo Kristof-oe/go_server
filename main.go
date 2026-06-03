@@ -270,32 +270,35 @@ func (cfg *apiConfig) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 func (cfg *apiConfig) handleGetAll(w http.ResponseWriter, r *http.Request) {
 
-	// type param struct {
-	// 	Body   string    `json:"body"`
-	// 	UserID uuid.UUID `json:"user_id"`
-	// }
-	// decoder := json.NewDecoder(r.Body)
-	// params := param{}
-	// err := decoder.Decode(&params)
-	// if err != nil {
-	// 	respondWithError(w, 500, "Something went wrong")
-	// 	return
-	// }
-	// if len(params.Body) > 140 {
-	// 	respondWithError(w, 400, "Chirp is too long")
-	// 	return
-	// }
+	s := r.URL.Query().Get("author_id")
 
-	chirps_db, err := cfg.db.GetChirps(r.Context())
+	s_u, err := uuid.Parse(s)
 	if err != nil {
-		log.Printf("Something went wrong: %s", err)
-		w.WriteHeader(500)
-		return
+		chirps_db, err := cfg.db.GetChirps(r.Context())
+		if err != nil {
+			log.Printf("Something went wrong: %s", err)
+			w.WriteHeader(500)
+			return
 
+		}
+
+		chirps := []Chirp{}
+		for _, chirp := range chirps_db {
+
+			chirps = append(chirps, Chirp{
+				ID:        chirp.ID,
+				CreatedAt: chirp.CreatedAt,
+				UpdatedAt: chirp.UpdatedAt,
+				Body:      chirp.Body,
+				UserID:    chirp.UserID})
+		}
+
+		respondWithJSON(w, http.StatusOK, chirps)
 	}
+	author_by, err := cfg.db.GetByID2(r.Context(), s_u)
 
 	chirps := []Chirp{}
-	for _, chirp := range chirps_db {
+	for _, chirp := range author_by {
 
 		chirps = append(chirps, Chirp{
 			ID:        chirp.ID,
